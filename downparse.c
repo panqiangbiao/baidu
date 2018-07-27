@@ -1,4 +1,5 @@
 #include "stdio.h"
+#include "string.h"
 #include <stdlib.h>
 #include "./pcs/cJSON.h"
 
@@ -23,8 +24,17 @@ int downloadList(char *str)
     fclose(file);
     return 1;
 }
-
-int getJSONFromServer(cJSON **json)
+char *getPathFromJSON(cJSON *json)
+{
+    cJSON *item =   cJSON_GetObjectItem(json,"path");
+    if(!item)
+    {
+        printf("item null");
+        return NULL;
+    }
+    return item->valuestring;
+}
+int getJSONFromFile(cJSON **json)
 {
     char *str;
     FILE *file;
@@ -40,6 +50,7 @@ int getJSONFromServer(cJSON **json)
     if(!file)
     {
         printf("json open fail");
+        free(str);
         return -1;    
     }
     //parse download.json 
@@ -49,14 +60,17 @@ int getJSONFromServer(cJSON **json)
         *ptr = byte;
         ptr ++;
     }   
-    printf("%s \n",str);
+    //printf("%s \n",str);
     *json = NULL; 
     *json = cJSON_Parse(str);
     if(!(*json))
     {
         printf("get Json parse fail \n");
+        fclose(file);
+        free(str);
         return -1;
     }
+    fclose(file);
     free(str);
     return 1;
 }
@@ -88,10 +102,33 @@ int createUPloadJSON(cJSON *json)
     fclose(file);
     return 1;
 }
+int getPathAfterDwnFile(char *path)
+{
+    char *str;
+    cJSON *json;
+    if(getJSONFromFile(&json)== -1)
+    {
+        printf("Get JSON fail");
+        return  -1;
+    }
+    str = getPathFromJSON(json);
+    if(!str)
+    {
+        printf("get item str fail");
+        cJSON_Delete(json);
+        return -1;
+    }
+
+    memcpy(path , str ,strlen(str)); 
+    cJSON_Delete(json);
+    return 1;
+}
+
+#if 1
 int main()
 {
-    //char str[200];
-    cJSON *json,*item;
+    char path[JSON_LEN]={0};
+    cJSON *json;//*item;
     cJSON *dest;
 /*
     str = malloc(sizeof(char)*100);
@@ -111,25 +148,33 @@ int main()
         printf("JSON parse fail \n");
         return -1;
     }
-*/
     if(getJSONFromServer(&json)== -1)
     {
         printf("Get JSON fail");
         return  -1;
     }
-    printf("Get JSON suscess \n");
+    //printf("Get JSON suscess \n");
     item = cJSON_GetObjectItem(json,"path");
     if(!item)
     {
         printf("JSON ITEM parse fail \n");
         return -1;
     }
-    printf("%s\n",item->valuestring);
+*/
+   // path = getPathFromJSON(json);
+    system("rm aa.txt");
+
+    if(getPathAfterDwnFile(path)==-1)
+    {
+        printf("listen fail");
+        return -1;
+    }
+    printf("%s\n",path);
     dest = refreshUploadJSON(json);
-    printf("%s\n",cJSON_Print(dest));
+    //printf("%s\n",cJSON_Print(dest));
     //printf("%s\n",str);
     createUPloadJSON(dest);
-    cJSON_Delete(json);
+    //cJSON_Delete(json);
     cJSON_Delete(dest);
 }
-
+#endif

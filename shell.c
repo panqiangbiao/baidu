@@ -153,6 +153,128 @@
 #define UPLOAD_STATUS_FAIL				3
 #define UPLOAD_STATUS_UPLOADING			4
 
+#define DOWNLOAD_LIST_PATH "./download.json"
+#define UPLOAD_LIST_PATH "./upload.json"
+#define JSON_LEN 100
+
+int downloadList(char *str)
+{
+    FILE *file = fopen(DOWNLOAD_LIST_PATH,"r");
+    char p;
+    if(file ==NULL)
+    {
+        return -1;
+    }
+    while((p=getc(file))!=EOF)
+    {
+        *str = p;
+        str ++;
+        //printf("%c",p);
+    }
+    fclose(file);
+    return 1;
+}
+char *getPathFromJSON(cJSON *json)
+{
+    cJSON *item =   cJSON_GetObjectItem(json,"path");
+    if(!item)
+    {
+        printf("item null");
+        return NULL;
+    }
+    return item->valuestring;
+}
+int getJSONFromFile(cJSON **json)
+{
+    char *str;
+    FILE *file;
+    char byte,*ptr;
+    //call download code to download download.json
+    //get stream from file
+    str = malloc(sizeof(char)*JSON_LEN);
+    if(!str)
+    {
+        printf("get json memory fail");
+    }
+    file = fopen(DOWNLOAD_LIST_PATH,"r+");
+    if(!file)
+    {
+        printf("json open fail");
+        free(str);
+        return -1;
+    }
+    //parse download.json
+    ptr = str;
+    while((byte = getc(file))!=EOF)
+    {
+        *ptr = byte;
+        ptr ++;
+    }
+    //printf("%s \n",str);
+    *json = NULL;
+    *json = cJSON_Parse(str);
+    if(!(*json))
+    {
+        printf("get Json parse fail \n");
+        fclose(file);
+        free(str);
+        return -1;
+    }
+    fclose(file);
+    free(str);
+    return 1;
+}
+cJSON * refreshUploadJSON(cJSON *src)
+{
+    cJSON * dest;
+    dest = cJSON_CreateObject();
+    cJSON_AddItemToObject(dest,"path",cJSON_CreateString("make"));
+    cJSON_AddItemToObject(dest,"status",cJSON_CreateString("2"));
+    cJSON_AddItemToObject(dest,"curtime",cJSON_CreateString("2"));
+    cJSON_AddItemToObject(dest,"speed",cJSON_CreateString("2 kb"));
+    return dest;
+}
+/* create upload.json to upload*/
+int createUPloadJSON(cJSON *json)
+{
+    FILE * file = fopen(UPLOAD_LIST_PATH,"w+");
+    char *s = NULL;
+    if(!file)
+    {
+        printf(" upload open fail");
+        return -1;
+    }
+    s = cJSON_Print(json);
+    //while(s !="\0")
+    {
+        fputs(s,file);
+    }
+    fclose(file);
+    return 1;
+}
+int getPathAfterDwnFile(char *path)
+{
+    char *str;
+    cJSON *json;
+    if(getJSONFromFile(&json)== -1)
+    {
+        printf("Get JSON fail");
+        return  -1;
+    }
+    str = getPathFromJSON(json);
+    if(!str)
+    {
+        printf("get item str fail");
+        cJSON_Delete(json);
+        return -1;
+    }
+
+    memcpy(path , str ,strlen(str));
+    cJSON_Delete(json);
+    return 1;
+}
+
+
 /* 文件元数据*/
 typedef struct MyMeta MyMeta;
 struct MyMeta
@@ -3643,7 +3765,6 @@ static inline int do_download(ShellContext *context,
 	else {
 		local_path = combin_path(local_basedir, -1, local_file);
 	}
-
 	/*创建目录*/
 	dir = base_dir(local_path, -1);
 	if (dir) {
@@ -3699,6 +3820,10 @@ static inline int do_download(ShellContext *context,
 
 	ds.remote_file = remote_path;
 
+    printf("local_basedir %s \n",local_basedir);
+    printf("local_file %s \n",local_file);
+    printf("remote_basedir %s \n",remote_basedir);
+    printf("remote_file %s \n",remote_file);
 	fsize = pcs_get_download_filesize(context->pcs, remote_path);
 	ds.file_size = fsize;
     if (fsize < 0) {
@@ -5268,8 +5393,8 @@ static int cmd_download(ShellContext *context, struct args *arg)
 		usage_download();
 		return 0;
 	}
-
 	is_force = has_opt(arg, "f");
+    printf("argc%d ;is forece %d relPath:%s,local: %s cmd %s optc%d\n", arg->argc ,is_force,arg->argv[0],arg->argv[1], arg->cmd,arg->optc);
 	relPath = arg->argv[0];
 	locPath = u8_is_utf8_sys() ? arg->argv[1] : utf82mbs(arg->argv[1]);
 
@@ -6850,8 +6975,64 @@ static int cmd_who(ShellContext *context, struct args *arg)
 	return 0;
 }
 
+int getPathAfterDwnFile(char *path);
 #pragma endregion
+static int cmd_listen(ShellContext *context, struct args *arg)
+{
+    struct args listenArg = {0};
+    char *cmd = "download";
+ 
+    char *jsonpath = DOWNLOAD_LIST_PATH; 
+    char ** ptr;// = listenArg.argv;
+    char path[100] = {0};
+    listenArg.cmd = cmd;
+    listenArg.argv =(char **)pcs_malloc(sizeof(char**)*2);
+    system("rm download.json");
+    while(1)
+    {
+        sleep(3);
+        // download json
+        ptr = listenArg.argv;
+        *ptr = jsonpath;
+        *(++ptr) = jsonpath;
+        printf("listen :%s %s \n",listenArg.argv[0],listenArg.argv[1]);
+        listenArg.argc = 2;
+        cmd_download(context,&listenArg);
 
+        if(getPathAfterDwnFile(path) ==-1)
+        {
+            printf("get path fail ");
+            continue;
+        }
+        
+        ptr = listenArg.argv;
+        *ptr = path;
+        *(++ptr) = path;
+        printf("listen :%s %s \n",listenArg.argv[0],listenArg.argv[1]);
+        listenArg.argc = 2;
+        cmd_download(context,&listenArg);
+   }
+//listen check if have mission
+//sleep 10s---set 30minute in the future //alarm? signal(SIGALRM, func);
+/*
+while(1)
+{
+sleep(30);
+listen();
+if(not exiten)
+download();
+parsejson()
+start to download()
+download finish();
+delete();
+{
+change server json;
+}
+}
+*/  
+
+
+}
 /*路由到具体的命令函数*/
 static int exec_cmd(ShellContext *context, struct args *arg)
 {
@@ -6891,6 +7072,10 @@ static int exec_cmd(ShellContext *context, struct args *arg)
 		|| strcmp(cmd, "config") == 0) {
 		rc = cmd_context(context, arg);
 	}
+    else if (strcmp(cmd,"listen")==0)
+    {
+        rc = cmd_listen(context,arg);
+    }
 	else if (strcmp(cmd, "download") == 0
 		|| strcmp(cmd, "d") == 0) {
 		rc = cmd_download(context, arg);
